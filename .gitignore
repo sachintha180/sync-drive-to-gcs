@@ -5,5 +5,3 @@ secrets/
 scripts/
 
 .env.local
-
-GCP_SETUP.txt
