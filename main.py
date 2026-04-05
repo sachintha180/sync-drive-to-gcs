@@ -109,12 +109,9 @@ def stream_drive_to_gcs(drive_service, file_meta, bucket):
     buffer = io.BytesIO()
     downloader = MediaIoBaseDownload(buffer, request, chunksize=CHUNK_SIZE)
 
-    # Show the download progress
     done = False
     while not done:
-        status, done = downloader.next_chunk()
-        if status:
-            print(f"  Downloading {file_name}: {int(status.progress() * 100)}%")
+        _, done = downloader.next_chunk()
 
     # Create the downloaded file as a blob and upload it to GCS
     buffer.seek(0)

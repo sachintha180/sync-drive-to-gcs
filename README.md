@@ -117,8 +117,9 @@ gcloud functions deploy sync-drive-to-gcs `
 --no-allow-unauthenticated `
 --service-account drive-reader@portfolio-492410.iam.gserviceaccount.com `
 --env-vars-file env.yaml `
---memory 512MB `
---timeout 540s
+--memory 1024MB `
+--timeout 540s `
+--max-instances 1
 ```
 
 - `--gen2`: deploys as a 2nd-gen function, which runs on Cloud Run under the hood and supports longer timeouts and more memory.
@@ -131,6 +132,7 @@ gcloud functions deploy sync-drive-to-gcs `
 - `--env-vars-file`: YAML file containing environment variables injected at runtime.
 - `--memory`: RAM allocated to each function instance.
 - `--timeout`: maximum allowed execution time before the function is forcibly terminated.
+- `--max-instances`: maximum number of function instances that can run simultaneously. Setting this to `1` ensures only one sync runs at a time, preventing race conditions where multiple instances upload the same files concurrently.
 
 ---
 
@@ -153,7 +155,8 @@ gcloud scheduler jobs create http sync-drive-job `
 --uri="$(gcloud functions describe sync-drive-to-gcs --region=asia-south1 --gen2 --format='value(serviceConfig.uri)')" `
 --http-method=POST `
 --oidc-service-account-email=drive-reader@portfolio-492410.iam.gserviceaccount.com `
---oidc-token-audience="$(gcloud functions describe sync-drive-to-gcs --region=asia-south1 --gen2 --format='value(serviceConfig.uri)')"
+--oidc-token-audience="$(gcloud functions describe sync-drive-to-gcs --region=asia-south1 --gen2 --format='value(serviceConfig.uri)')" `
+--attempt-deadline=540s
 ```
 
 - `--schedule`: cron expression defining when the job runs (`0 */6 * * *` = every 6 hours).
@@ -161,3 +164,10 @@ gcloud scheduler jobs create http sync-drive-job `
 - `--http-method`: HTTP verb used when calling the function.
 - `--oidc-service-account-email`: service account used to generate the OIDC identity token attached to the request.
 - `--oidc-token-audience`: the audience the token is issued for: must match the function's URL for authentication to succeed.
+- `--attempt-deadline`: maximum time the scheduler will wait for the target to respond before marking the attempt as failed. Should match or exceed the function's `--timeout` to prevent the scheduler from giving up before the function finishes.
+
+To run the scheduler on command:
+
+```
+gcloud scheduler jobs run sync-drive-job --location="asia-south1"
+```
