@@ -116,7 +116,7 @@ gcloud functions deploy sync-drive-to-gcs `
 --trigger-http `
 --no-allow-unauthenticated `
 --service-account drive-reader@portfolio-492410.iam.gserviceaccount.com `
---set-env-vars "GCP_PROJECT_ID=portfolio-492410,GCS_BUCKET_NAME=the-cs-class,GDRIVE_FOLDER_ID=16lS6apAHGK1OgSGjWp3k5RteB9vjl9do" `
+--env-vars-file env.yaml `
 --memory 512MB `
 --timeout 540s
 ```
@@ -128,7 +128,7 @@ gcloud functions deploy sync-drive-to-gcs `
 - `--trigger-http`: exposes the function via an HTTPS endpoint.
 - `--no-allow-unauthenticated`: restricts access so only callers with a valid identity token can invoke it.
 - `--service-account`: the identity the function runs as: determines what GCP resources it can access.
-- `--set-env-vars`: environment variables injected at runtime (project ID, bucket name, Drive folder ID).
+- `--env-vars-file`: YAML file containing environment variables injected at runtime.
 - `--memory`: RAM allocated to each function instance.
 - `--timeout`: maximum allowed execution time before the function is forcibly terminated.
 
