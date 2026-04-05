@@ -1,0 +1,9 @@
+__pycache__/
+.venv/
+.vscode/
+secrets/
+scripts/
+
+.env.local
+
+GCP_SETUP.txt
