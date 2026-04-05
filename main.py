@@ -14,16 +14,30 @@ load_dotenv(".env.local")
 
 GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 GCS_BUCKET_NAME = os.environ["GCS_BUCKET_NAME"]
-GDRIVE_FOLDER_ID = os.environ["GDRIVE_FOLDER_ID"]
+
+GDRIVE_NOTES_FOLDER_ID = os.environ["GDRIVE_NOTES_FOLDER_ID"]
+GDRIVE_RECORDINGS_FOLDER_ID = os.environ["GDRIVE_RECORDINGS_FOLDER_ID"]
+GDRIVE_PY_QUESTIONS_FOLDER_ID = os.environ.get("GDRIVE_PY_QUESTIONS_FOLDER_ID")
+GDRIVE_PY_SNIPPETS_FOLDER_ID = os.environ.get("GDRIVE_PY_SNIPPETS_FOLDER_ID")
+
+# Map each folder ID to its expected file extension (only set folders are included)
+GDRIVE_FOLDERS = {
+    folder_id: ext
+    for folder_id, ext in [
+        (GDRIVE_NOTES_FOLDER_ID, ".pdf"),
+        (GDRIVE_RECORDINGS_FOLDER_ID, ".mp4"),
+        (GDRIVE_PY_QUESTIONS_FOLDER_ID, ".py"),
+        (GDRIVE_PY_SNIPPETS_FOLDER_ID, ".py"),
+    ]
+    if folder_id
+}
+
 SECRET_NAME = (
-    f"projects/{GCP_PROJECT_ID}/secrets/drive-oauth-credentials/versions/latest"
+    f"projects/{GCP_PROJECT_ID}/secrets/drive-reader-oauth-creds/versions/latest"
 )
 
 # Chunk size for streaming: 10MB (must be a multiple of 256KB)
 CHUNK_SIZE = 10 * 1024 * 1024
-
-# Only allow tuition-related files (PDF notes, MP4 videos and PY code files)
-ALLOWED_EXTENSIONS = {".pdf", ".mp4", ".py"}
 
 
 def get_drive_credentials():
@@ -113,7 +127,7 @@ def stream_drive_to_gcs(drive_service, file_meta, bucket):
 
 @functions_framework.http
 def sync_drive_to_gcs(request):
-    print("Starting Drive to GCS sync...")
+    print("Starting Drive to GCS sync")
 
     try:
         creds = get_drive_credentials()
@@ -121,7 +135,12 @@ def sync_drive_to_gcs(request):
         gcs_client = storage.Client()
         bucket = gcs_client.bucket(GCS_BUCKET_NAME)
 
-        drive_files = list_drive_files(drive_service, GDRIVE_FOLDER_ID)
+        drive_files = []
+        for folder_id in GDRIVE_FOLDERS:
+            drive_files.extend(
+                (file | {"_allowed_ext": GDRIVE_FOLDERS[folder_id]})
+                for file in list_drive_files(drive_service, folder_id)
+            )
         gcs_checksums = get_gcs_metadata(bucket)
 
         print(
@@ -133,8 +152,8 @@ def sync_drive_to_gcs(request):
             name = file["name"]
             drive_md5 = file.get("md5Checksum")
 
-            # Only sync allowlisted extensions
-            if os.path.splitext(name)[1].lower() not in ALLOWED_EXTENSIONS:
+            # Only sync files matching the folder's expected extension
+            if os.path.splitext(name)[1].lower() != file["_allowed_ext"]:
                 print(f"  Skipping (unsupported type): {name}")
                 skipped.append({"file": name, "reason": "unsupported-type"})
                 continue
