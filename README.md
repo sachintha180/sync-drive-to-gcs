@@ -43,6 +43,12 @@ gcloud storage buckets describe gs://the-cs-class `
 --format="json(iamConfiguration,publicAccessPrevention)"
 ```
 
+If you ever need to copy content from one bucket to another:
+
+```
+gcloud storage cp --recursive gs://source-bucket-name/* gs://destination-bucket-name/
+```
+
 ---
 
 ## 3. Create Service Account

@@ -3,6 +3,4 @@ __pycache__/
 .vscode/
 secrets/
 scripts/
-
-.env.local
-env.yaml
+yaml/

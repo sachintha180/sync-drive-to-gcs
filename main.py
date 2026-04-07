@@ -152,6 +152,8 @@ def sync_drive_to_gcs(request):
                 errors.append({"file": name, "error": str(e)})
 
         # Delete blobs in GCS that are no longer present in Drive
+        # NOTE: This works under the assumption that the drive has less files than the bucket when expecting a deletion;
+        #       hence the bucket must not be manipulated / updated in any way besides via this Cloud Run.
         for blob_name in set(gcs_checksums.keys()) - drive_map.keys():
             try:
                 bucket.blob(blob_name).delete()
