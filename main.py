@@ -3,33 +3,19 @@ import os
 import json
 import base64
 import functions_framework
-from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.cloud import storage, secretmanager
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.http import MediaIoBaseDownload
 
-load_dotenv(".env.local")
-
 GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 GCS_BUCKET_NAME = os.environ["GCS_BUCKET_NAME"]
 
-GDRIVE_NOTES_FOLDER_ID = os.environ["GDRIVE_NOTES_FOLDER_ID"]
-GDRIVE_RECORDINGS_FOLDER_ID = os.environ["GDRIVE_RECORDINGS_FOLDER_ID"]
-GDRIVE_PY_QUESTIONS_FOLDER_ID = os.environ.get("GDRIVE_PY_QUESTIONS_FOLDER_ID")
-GDRIVE_PY_SNIPPETS_FOLDER_ID = os.environ.get("GDRIVE_PY_SNIPPETS_FOLDER_ID")
-
-# Map each folder ID to its expected file extension (only set folders are included)
+# Map each Drive folder ID to its list of allowed extensions
 GDRIVE_FOLDERS = {
-    folder_id: ext
-    for folder_id, ext in [
-        (GDRIVE_NOTES_FOLDER_ID, ".pdf"),
-        (GDRIVE_RECORDINGS_FOLDER_ID, ".mp4"),
-        (GDRIVE_PY_QUESTIONS_FOLDER_ID, ".py"),
-        (GDRIVE_PY_SNIPPETS_FOLDER_ID, ".py"),
-    ]
-    if folder_id
+    folder["drive_folder_id"]: [ext.lower() for ext in folder["allowed_extensions"]]
+    for folder in json.loads(os.environ["SYNC_FOLDERS"])
 }
 
 SECRET_NAME = (
@@ -132,33 +118,27 @@ def sync_drive_to_gcs(request):
         gcs_client = storage.Client()
         bucket = gcs_client.bucket(GCS_BUCKET_NAME)
 
-        drive_files = []
-        for folder_id in GDRIVE_FOLDERS:
-            drive_files.extend(
-                (file | {"_allowed_ext": GDRIVE_FOLDERS[folder_id]})
-                for file in list_drive_files(drive_service, folder_id)
-            )
+        # Build a map of valid Drive files (extension-filtered) keyed by name
+        drive_map = {}
+        for folder_id, allowed_exts in GDRIVE_FOLDERS.items():
+            for file in list_drive_files(drive_service, folder_id):
+                if os.path.splitext(file["name"])[1].lower() in allowed_exts:
+                    drive_map[file["name"]] = file
+
         gcs_checksums = get_gcs_metadata(bucket)
 
         print(
-            f"Found {len(drive_files)} file(s) in Drive, {len(gcs_checksums)} in GCS."
+            f"Found {len(drive_map)} valid file(s) in Drive, {len(gcs_checksums)} in GCS."
         )
-        uploaded, skipped, errors = [], [], []
+        uploaded, skipped, deleted, errors = [], [], [], []
 
-        for file in drive_files:
-            name = file["name"]
+        for name, file in drive_map.items():
             drive_md5 = file.get("md5Checksum")
-
-            # Only sync files matching the folder's expected extension
-            if os.path.splitext(name)[1].lower() != file["_allowed_ext"]:
-                print(f"  Skipping (unsupported type): {name}")
-                skipped.append({"file": name, "reason": "unsupported-type"})
-                continue
 
             # Skip if MD5 matches, as the file is unchanged
             if drive_md5 and gcs_checksums.get(name) == drive_md5:
                 print(f"  Unchanged, skipping: {name}")
-                skipped.append({"file": name, "reason": "unchanged"})
+                skipped.append(name)
                 continue
 
             # Otherwise, stream to GCS from GDrive
@@ -171,11 +151,22 @@ def sync_drive_to_gcs(request):
                 print(f"  Error syncing {name}: {e}")
                 errors.append({"file": name, "error": str(e)})
 
+        # Delete blobs in GCS that are no longer present in Drive
+        for blob_name in set(gcs_checksums.keys()) - drive_map.keys():
+            try:
+                bucket.blob(blob_name).delete()
+                deleted.append(blob_name)
+                print(f"  Deleted (no longer in Drive): {blob_name}")
+            except Exception as e:
+                print(f"  Error deleting {blob_name}: {e}")
+                errors.append({"file": blob_name, "error": str(e)})
+
         result = {
             "uploaded": uploaded,
+            "deleted": deleted,
             "skipped": skipped,
             "errors": errors,
-            "summary": f"{len(uploaded)} uploaded, {len(skipped)} skipped, {len(errors)} errors",
+            "summary": f"{len(uploaded)} uploaded, {len(deleted)} deleted, {len(skipped)} skipped, {len(errors)} errors",
         }
         print(f"Sync complete: {result['summary']}")
         return (json.dumps(result), 200, {"Content-Type": "application/json"})
