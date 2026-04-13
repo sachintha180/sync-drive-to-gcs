@@ -27,7 +27,7 @@ Create the GCS bucket that Drive files will be synced into:
 
 ```
 gcloud storage buckets create gs://the-cs-class `
---location=asia-south1 `
+--location=asia-southeast1 `
 --uniform-bucket-level-access `
 --public-access-prevention
 ```
@@ -85,7 +85,7 @@ gcloud iam service-accounts keys create ./secrets/drive-reader-sa-key.json `
 Run the local script to generate a Google Drive OAuth refresh token:
 
 ```
-python -m scripts.generate_refresh_token
+python -m scripts.generate_refresh_token --scopes "https://www.googleapis.com/auth/drive.readonly"
 ```
 
 This writes credentials to `secrets/drive-reader-oauth.json`. Store them in Secret Manager so the Cloud Function can access them at runtime:
@@ -116,7 +116,7 @@ Deploy `sync-drive-to-gcs` as a gen2 HTTP-triggered Cloud Function:
 gcloud functions deploy sync-drive-to-gcs `
 --gen2 `
 --runtime python311 `
---region asia-south1 `
+--region asia-southeast1 `
 --source . `
 --entry-point sync_drive_to_gcs `
 --trigger-http `
@@ -148,7 +148,7 @@ Grant `drive-reader` permission to invoke the function:
 
 ```
 gcloud functions add-invoker-policy-binding sync-drive-to-gcs `
---region=asia-south1 `
+--region=asia-southeast1 `
 --member="serviceAccount:drive-reader@portfolio-492410.iam.gserviceaccount.com"
 ```
 
@@ -156,16 +156,16 @@ Create a scheduler job that triggers the function every 6 hours:
 
 ```
 gcloud scheduler jobs create http sync-drive-job `
---location=asia-south1 `
---schedule="0 */6 * * *" `
---uri="$(gcloud functions describe sync-drive-to-gcs --region=asia-south1 --gen2 --format='value(serviceConfig.uri)')" `
+--location=asia-southeast1 `
+--schedule="0 */1 * * *" `
+--uri="$(gcloud functions describe sync-drive-to-gcs --region=asia-southeast1 --gen2 --format='value(serviceConfig.uri)')" `
 --http-method=POST `
 --oidc-service-account-email=drive-reader@portfolio-492410.iam.gserviceaccount.com `
---oidc-token-audience="$(gcloud functions describe sync-drive-to-gcs --region=asia-south1 --gen2 --format='value(serviceConfig.uri)')" `
+--oidc-token-audience="$(gcloud functions describe sync-drive-to-gcs --region=asia-southeast1 --gen2 --format='value(serviceConfig.uri)')" `
 --attempt-deadline=540s
 ```
 
-- `--schedule`: cron expression defining when the job runs (`0 */6 * * *` = every 6 hours).
+- `--schedule`: cron expression defining when the job runs (`0 */1 * * *` = every hour).
 - `--uri`: the HTTPS endpoint to call: fetched dynamically from the deployed function's config.
 - `--http-method`: HTTP verb used when calling the function.
 - `--oidc-service-account-email`: service account used to generate the OIDC identity token attached to the request.
@@ -175,5 +175,5 @@ gcloud scheduler jobs create http sync-drive-job `
 To run the scheduler on command:
 
 ```
-gcloud scheduler jobs run sync-drive-job --location="asia-south1"
+gcloud scheduler jobs run sync-drive-job --location="asia-southeast1"
 ```
