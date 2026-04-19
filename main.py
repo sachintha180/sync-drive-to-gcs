@@ -22,7 +22,7 @@ SECRET_NAME = (
     f"projects/{GCP_PROJECT_ID}/secrets/drive-reader-oauth-creds/versions/latest"
 )
 
-# Chunk size for streaming: 10MB (must be a multiple of 256KB)
+# Chunk size: 10MB (must be a multiple of 256KB)
 CHUNK_SIZE = 10 * 1024 * 1024
 
 
